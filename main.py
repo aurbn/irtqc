@@ -7,6 +7,7 @@ from matplotlib import pyplot as plt
 import tqdm
 import scipy.signal as sgn
 from scipy.ndimage.filters import gaussian_filter1d
+from scipy.interpolate import interp1d
 import itertools
 
 from scipy.special import erf
@@ -76,21 +77,16 @@ class Chromatogram:
         peaksamp = self.__ints[peaksi]
         maxpeaki = np.argmax(peaksamp)
         apexi = peaksi[maxpeaki]
-        return apexi, self.__ints[apexi], self.__times[apexi]
-
-    def get_apex_time(self):
-        return self.get_apex()[2]
-
-    def get_apex_int(self):
-        return self.get_apex()[1]
+        return self.__times[apexi], self.__ints[apexi]
 
     def _get_width_indexs(self, apex_pc):
-        apexa = self.get_apex_int()
-        left = np.where(self.__ints>apexa*apex_pc/100)[0][0]
-        right = np.where(self.__ints>apexa*apex_pc/100)[0][-1]
+        _, apexa = self.get_apex()
+        t_ = self.__ints>apexa*apex_pc/100
+        left = np.where(t_)[0][0]
+        right = np.where(t_)[0][-1]
         return left, right
 
-    def get_width(self, apex_pc):
+    def get_width_pc(self, apex_pc):
         left, right = self._get_width_indexs(apex_pc)
         return self.__times[left], self.__times[right]
 
@@ -100,7 +96,7 @@ class Chromatogram:
         times_sh = self.__times[left+1:right+1]
         deltas = times_sh - times
         ints = self.__ints[left:right]
-        return sum(deltas * ints)
+        return np.sum(deltas * ints)
 
     def __getitem__(self, item):
         if isinstance(item, slice):
@@ -122,7 +118,7 @@ class Chromatogram:
 
 
 class Spectrum:
-    """Simgle spectrum"""
+    """Single spectrum"""
 
     def __init__(self, mza, inta, mslevel=None, precursor=None, time=None):
         """Constructor for Spectrum"""
@@ -152,6 +148,49 @@ class Spectrum:
                             self.__level, self.__prec, self.__time)
         else:
             raise TypeError
+
+    def _get_apex_around(self, mz, tolerance):
+        select = self[mz-tolerance:mz+tolerance]
+        peaksi, _ = sgn.find_peaks(select.__inta)
+        assert len(peaksi), "No peaks found"
+        peaksamp = select.__inta[peaksi]
+        maxpeaki = np.argmax(peaksamp)
+        apexi = peaksi[maxpeaki]
+        return select.__mza[apexi], select.__inta[apexi], apexi
+
+    def get_apex_around(self, mz, tolerance):
+        ap_mz, ap_int, _ = self._get_apex_around(mz, tolerance)
+        return ap_mz, ap_int
+
+    def _resample_peak_around(self, mz, tolerance=0.05, ndots = None):
+        if not ndots:
+            sw = self.__mza[-1] - self.__mza[0]  # Spectrum width
+            ndots = 2*tolerance*len(self.__mza)/sw
+        select = self[mz-tolerance:mz+tolerance]
+        res_x = np.linspace(mz-tolerance, mz+tolerance, ndots)
+        interp = interp1d(select.__mza, select.__inta)
+        res_y = interp(res_x) #resample
+        return Spectrum(res_x, res_y, self.__level, self.__prec, self.__time)
+
+    def get_apex_width_pc(self, mz, apex_pc=50, tolerance=0.05):
+        """Half width of MS peak"""
+        apex_mz, apex_int, index = self._get_apex_around(mz, tolerance)
+        resampled = self._resample_peak_around(mz, tolerance)
+        t_ = resampled.__inta>(apex_int*apex_pc/100)
+        left = np.where(t_)[0][0]
+        right = np.where(t_)[0][0]
+        return resampled.__mza[right]-resampled.__mza[left]
+
+    def _get_area(self):
+        y1 = self.__mza[:-1]
+        y2 = self.__mza[1:]
+        x = self.__inta[:-1]
+        return np.sum((y2-y1)*x)
+
+    def get_peak_area(self, mz, tolerance=0.05):
+        resampled = self._resample_peak_around(mz, tolerance)
+        return resampled._get_area()
+
 
 
 class Scan:
@@ -252,7 +291,7 @@ class MSnScans:
 
 
 class LCMSMSExperiment:
-    """Class for single LCMSMS experiment"""
+    """Single LCMSMS experiment"""
 
     def __init__(self, mzmlsource):
         self.ms1 = MSnScans(mslevel=1)
@@ -280,12 +319,8 @@ if __name__ == '__main__':
 
     exp = LCMSMSExperiment(tqdm.tqdm(mzml.MzML(argparser.mzml)))
 
-    fig = plt.figure()
-    ax = fig.add_subplot()
-    exp.ms1.tic.plot(ax, "Ms1", "g-")
-    fig.savefig("tic.png")
 
-    targets = pd.read_csv("./iRT2/qc1_targets.csv", sep='\t')
+    targets = pd.read_csv(argparser, sep='\t')
 
     pass
 
