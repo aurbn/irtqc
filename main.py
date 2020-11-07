@@ -272,8 +272,8 @@ class MSnScans:
             raise WrongMSLevel(1)
         res = []
         for mza, inta in zip(self.__mza, self.__inta):
-            left = mza.searchsorted(mz * (1 - ppm * 1e-6))
-            right = mza.searchsorted(mz * (1 + ppm * 1e-6))
+            left  = mza.searchsorted(mz * (1 - ppm * 0.5 * 1e-6))
+            right = mza.searchsorted(mz * (1 + ppm * 0.5 * 1e-6))
             res.append(inta[left:right].sum())
 
         res = np.array(res)
@@ -311,7 +311,7 @@ if __name__ == '__main__':
     argparser = ArgumentParser(description="iRT peptide QC tool")
     argparser.add_argument('--mzml', type=str, required=True, help="MzML file")
     argparser.add_argument('--targets', type=str, required=True, help="Targets file")
-    argparser.add_argument('--ms1-ppm', type=float, default=0.05, help="MS1 extraction window in ppm")
+    argparser.add_argument('--ms1-ppm', type=float, default=5, help="MS1 extraction window in ppm")
     argparser.add_argument('--width-1-pc', type=float, default=50, help="Cromatographic width 1 in % of apex")
     argparser.add_argument('--width-2-pc', type=float, default=5, help="Cromatographic width 2 in % of apex")
     argparser = argparser.parse_args()
@@ -349,18 +349,47 @@ if __name__ == '__main__':
                                         f"MS1_peak_area",
                                         ])
 
+    #from matplotlib.backends.backend_pdf import PdfPages
+    #pdf = PdfPages('MS1.pdf')
+    fig, axs = plt.subplots(len(targets_ms1), 2, figsize=(15, 40), gridspec_kw={'width_ratios': [1, 1]})
+    plt.subplots_adjust(hspace=0.5)
+
+    n=0
+
     for k, row in targets_ms1.iterrows():
         mz = row["Precursor_Mz"]
         ch = exp.ms1.xic(mz, argparser.ms1_ppm)
+        chs = ch.smooth(sigma=2)
         apext, apexi = ch.get_apex()
-        width1 = ch.get_width_pc(argparser.width_1_pc)
-        width2 = ch.get_width_pc(argparser.width_2_pc)
-        area1 = ch.get_width_pc_area(argparser.width_1_pc)
-        area2 = ch.get_width_pc_area(argparser.width_2_pc)
+        width1 = chs.get_width_pc(argparser.width_1_pc)
+        width2 = chs.get_width_pc(argparser.width_2_pc)
+        area1 = chs.get_width_pc_area(argparser.width_1_pc)
+        area2 = chs.get_width_pc_area(argparser.width_2_pc)
         spec = exp.ms1[apext]
         ms1_apex_mz, ms1_apex_int = spec.get_apex_around(mz, 0.05)
         ms1_hw = spec.get_apex_width_pc(mz, apex_pc=50, tolerance=0.05)
         ms1_area = spec.get_peak_area(mz, tolerance=0.05)
+
+        ### PLOT ###
+        axs[n, 0].plot(ch.t, ch.i, "g-")
+        #axs[n, 0].plot(xictimes, xic)
+        #axs[n, 0].plot(xictimes, asym_peak(xictimes, *popt), 'r-')
+        axs[n, 0].vlines(apext, 0, apexi * 1.1)
+        axs[n, 0].title.set_text("{}  mz={}  apex@{}".format(n, mz, apext))
+        axs[n, 0].set_xlim(15, 30)
+
+        axs[n, 1].plot(ch.t, ch.i, "gx-")
+        axs[n, 1].plot(chs.t, chs.i, "rx-")
+        #axs[n, 1].plot(xictimes, asym_peak(xictimes, *popt), 'r-')
+        axs[n, 1].vlines(apext, 0, apexi)
+        axs[n, 1].title.set_text("{}  mz={:.4f}".format(n, mz))
+        axs[n, 1].hlines(apexi *0.5, *width1)#, xictimes[right1])
+        axs[n, 1].hlines(apexi *0.05, *width2)# xictimes[left2], xictimes[right2])
+        axs[n, 1].set_xlim(apext - 0.2, apext + 0.4)
+        axs[n, 1].text(0.45, 0.95, f"Area50={area1:.3e}\nArea5  ={area2:.3e}", transform=axs[n, 1].transAxes,
+                       fontsize=10, verticalalignment='top')
+        n+=1
+        ############
 
         row['Apex_time'] = apext
         row[f"Width_{argparser.width_1_pc}_pc_time_start"] = width1[0]
@@ -376,4 +405,5 @@ if __name__ == '__main__':
 
         results_ms1 = results_ms1.append(row)
 
-    results_ms1.to_csv("MS1_test.csv", sep='\t')
+    fig.savefig("MS1.pdf", dpi=1200, format='pdf', bbox_inches='tight')
+    results_ms1.to_csv("MS1_test.csv", sep='\t', index=False)
