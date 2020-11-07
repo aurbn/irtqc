@@ -72,6 +72,7 @@ class Chromatogram:
         ax.plot(self.__times, self.__ints, *args, **kwargs)
 
     def get_apex(self):
+        """Returns tuple time,intensity"""
         peaksi, _ = sgn.find_peaks(self.__ints, threshold=self.__ints.mean())
         assert len(peaksi), "No peaks found"
         peaksamp = self.__ints[peaksi]
@@ -159,16 +160,15 @@ class Spectrum:
         return select.__mza[apexi], select.__inta[apexi], apexi
 
     def get_apex_around(self, mz, tolerance):
+        """Returns tuple of apex_mz, apex_int"""
         ap_mz, ap_int, _ = self._get_apex_around(mz, tolerance)
         return ap_mz, ap_int
 
     def _resample_peak_around(self, mz, tolerance=0.05, ndots = None):
-        if not ndots:
-            sw = self.__mza[-1] - self.__mza[0]  # Spectrum width
-            ndots = 2*tolerance*len(self.__mza)/sw
+        ndots = ndots if ndots else len(self.__mza)
         select = self[mz-tolerance:mz+tolerance]
-        res_x = np.linspace(mz-tolerance, mz+tolerance, ndots)
-        interp = interp1d(select.__mza, select.__inta)
+        res_x = np.linspace(select.mz[0], select.mz[-1], ndots)
+        interp = interp1d(self.__mza, self.__inta)
         res_y = interp(res_x) #resample
         return Spectrum(res_x, res_y, self.__level, self.__prec, self.__time)
 
@@ -178,7 +178,7 @@ class Spectrum:
         resampled = self._resample_peak_around(mz, tolerance)
         t_ = resampled.__inta>(apex_int*apex_pc/100)
         left = np.where(t_)[0][0]
-        right = np.where(t_)[0][0]
+        right = np.where(t_)[0][-1]
         return resampled.__mza[right]-resampled.__mza[left]
 
     def _get_area(self):
@@ -316,13 +316,64 @@ if __name__ == '__main__':
     argparser.add_argument('--width-2-pc', type=float, default=5, help="Cromatographic width 2 in % of apex")
     argparser = argparser.parse_args()
 
+    # exp = LCMSMSExperiment(tqdm.tqdm(mzml.MzML(argparser.mzml)))
 
-    exp = LCMSMSExperiment(tqdm.tqdm(mzml.MzML(argparser.mzml)))
+    ##### FOR TESTING ####
+    import pickle
+    import time
 
+    # with open("exp.pkl", "wb") as f_:
+    #     pickle.dump(exp, f_)
 
-    targets = pd.read_csv(argparser, sep='\t')
+    _start_time = time.time()
+    with open("exp.pkl", "rb") as f_:
+        print("Unpickling")
+        exp = pickle.load(f_)
+        print(f"Unpickled in {time.time()-_start_time} seconds")
+    #### ####
 
-    pass
+    targets = pd.read_csv(argparser.targets, sep='\t')
+    targets_ms1 = targets[["Sequence", "Precursor_Mz"]].drop_duplicates()
+    results_ms1 = pd.DataFrame(columns=["Sequence",
+                                        "Precursor_Mz",
+                                        "Apex_time",
+                                        f"Width_{argparser.width_1_pc}_pc_time_start",
+                                        f"Width_{argparser.width_1_pc}_pc_time_end",
+                                        f"Width_{argparser.width_1_pc}_xic_area",
+                                        f"Width_{argparser.width_2_pc}_pc_time_start",
+                                        f"Width_{argparser.width_2_pc}_pc_time_end",
+                                        f"Width_{argparser.width_2_pc}_xic_area",
+                                        f"MS1_mass_apex_mz",
+                                        f"MS1_apex_height",
+                                        f"MS1_peak_halfwidth",
+                                        f"MS1_peak_area",
+                                        ])
 
+    for k, row in targets_ms1.iterrows():
+        mz = row["Precursor_Mz"]
+        ch = exp.ms1.xic(mz, argparser.ms1_ppm)
+        apext, apexi = ch.get_apex()
+        width1 = ch.get_width_pc(argparser.width_1_pc)
+        width2 = ch.get_width_pc(argparser.width_2_pc)
+        area1 = ch.get_width_pc_area(argparser.width_1_pc)
+        area2 = ch.get_width_pc_area(argparser.width_2_pc)
+        spec = exp.ms1[apext]
+        ms1_apex_mz, ms1_apex_int = spec.get_apex_around(mz, 0.05)
+        ms1_hw = spec.get_apex_width_pc(mz, apex_pc=50, tolerance=0.05)
+        ms1_area = spec.get_peak_area(mz, tolerance=0.05)
 
+        row['Apex_time'] = apext
+        row[f"Width_{argparser.width_1_pc}_pc_time_start"] = width1[0]
+        row[f"Width_{argparser.width_1_pc}_pc_time_end"] = width1[1]
+        row[f"Width_{argparser.width_1_pc}_xic_area"] = area1
+        row[f"Width_{argparser.width_2_pc}_pc_time_start"] = width2[0]
+        row[f"Width_{argparser.width_2_pc}_pc_time_end"] = width2[1]
+        row[f"Width_{argparser.width_2_pc}_xic_area"] = area2
+        row[f"MS1_mass_apex_mz"] = ms1_apex_mz
+        row[f"MS1_apex_height"] = ms1_apex_int
+        row[f"MS1_peak_halfwidth"] = ms1_hw
+        row[f"MS1_peak_area"] = ms1_area
 
+        results_ms1 = results_ms1.append(row)
+
+    results_ms1.to_csv("MS1_test.csv", sep='\t')
