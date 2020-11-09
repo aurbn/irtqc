@@ -16,11 +16,6 @@ from scipy.optimize import curve_fit
 
 import sys
 
-# def precmz_to_float(mz, listfloat):
-#     for f in listfloat:
-#         if me(mz, f, eic_ppm):
-#             return f
-#     assert False, "No mass in list"
 
 class WrongMSLevel(Exception):
     """Wrong MS level"""
@@ -40,15 +35,6 @@ class WrongMSLevel(Exception):
         else:
             return f'Wrong MS level, should be {self.__expected}'
 
-class T:
-    def __init__(self, time):
-        self.__time  = time
-
-    def __str__(self):
-        return f'{self.__time} min'
-
-    def __int__(self):
-        return self.__time
 
 class Chromatogram:
     """Simple chromatogram"""
@@ -68,10 +54,11 @@ class Chromatogram:
         return self.__ints
 
     def plot(self, ax, *args, **kwargs):
+        """Plot on MPL axis"""
         ax.plot(self.__times, self.__ints, *args, **kwargs)
 
     def get_apex(self):
-        """Returns tuple time,intensity"""
+        """Returns tuple (time,intensity)"""
         peaksi, _ = sgn.find_peaks(self.__ints, threshold=self.__ints.mean())
         assert len(peaksi), "No peaks found"
         peaksamp = self.__ints[peaksi]
@@ -80,6 +67,7 @@ class Chromatogram:
         return self.__times[apexi], self.__ints[apexi]
 
     def _get_width_indexs(self, apex_pc):
+        """Returns leftmost and rightmost index where intensity is greater apex_pc% of apex """
         _, apexa = self.get_apex()
         t_ = self.__ints>apexa*apex_pc/100
         left = np.where(t_)[0][0]
@@ -87,10 +75,12 @@ class Chromatogram:
         return left, right
 
     def get_width_pc(self, apex_pc):
+        """Returns times where intensity raises above  and falls below apex_pc % of apex """
         left, right = self._get_width_indexs(apex_pc)
         return self.__times[left], self.__times[right]
 
     def get_width_pc_area(self, apex_pc):
+        """Finds area of peake where intensity is greater than apex_pc % of apex"""
         left, right = self._get_width_indexs(apex_pc)
         times = self.__times[left:right]
         times_sh = self.__times[left+1:right+1]
@@ -99,6 +89,7 @@ class Chromatogram:
         return np.sum(deltas * ints)
 
     def __getitem__(self, item):
+        """Select subchomatogram by time"""
         if isinstance(item, slice):
             if item.step is None:
                 left = np.searchsorted(self.__times, item.start)
@@ -111,6 +102,7 @@ class Chromatogram:
             return self.__ints[index]
 
     def smooth(self, type='gaussian', **kwargs):
+        """Smoth gromatogram using filter function"""
         if type == 'gaussian':
             return Chromatogram(self.__times, gaussian_filter1d(self.__ints, **kwargs))
         else:
@@ -148,6 +140,7 @@ class Spectrum:
             raise TypeError
 
     def _get_apex_around(self, mz, tolerance):
+        """Find apex within mz -/+ tolerance/2"""
         select = self[mz-tolerance:mz+tolerance]
         peaksi, _ = sgn.find_peaks(select.__inta)
         assert len(peaksi), "No peaks found"
@@ -162,6 +155,7 @@ class Spectrum:
         return ap_mz, ap_int
 
     def _resample_peak_around(self, mz, tolerance=0.05, ndots = None):
+        """Get subarea around mz -/+ tolerance and resample it to same amount of measurements"""
         ndots = ndots if ndots else len(self.__mza)
         select = self[mz-tolerance:mz+tolerance]
         res_x = np.linspace(select.mz[0], select.mz[-1], ndots)
@@ -179,19 +173,21 @@ class Spectrum:
         return resampled.__mza[right]-resampled.__mza[left]
 
     def _get_area(self):
+        """Get area under whole spectrum"""
         y1 = self.__mza[:-1]
         y2 = self.__mza[1:]
         x = self.__inta[:-1]
         return np.sum((y2-y1)*x)
 
     def get_peak_area(self, mz, tolerance=0.05):
+        """Get area under mz -/+ tolerance/2"""
         resampled = self._resample_peak_around(mz, tolerance)
         return resampled._get_area()
 
 
 
 class Scan:
-    """Wrapper for quick access to scan fields"""
+    """Wrapper for quick access to scan fields from Pytomics"""
     def __init__(self, scan):
         self.__s = scan
 
@@ -241,11 +237,12 @@ class MSnScans:
             raise WrongMSLevel(0, 2) #Ewww...
 
     def finish(self):
-        """Should be called after all values are added"""
+        """Should be called after all scans are added"""
         self._times = np.array(self._times)
         self._tic = np.array(self._tic)
 
     def append(self, scan: Scan) -> bool:
+        """Append scan, if mslevel is different do nothing and return False"""
         if scan.mslevel == self._mslevel:
             self._tic.append(scan.tic)
             self._times.append(scan.time)
@@ -257,6 +254,7 @@ class MSnScans:
         return False #Skip
 
 class MS2Scans(MSnScans):
+    """MS2 part of experiment"""
     def __init__(self):
         self._tolerance = None
         self._tolerance_ppm = None
@@ -281,6 +279,8 @@ class MS2Scans(MSnScans):
         return Chromatogram(self._times[where], self._tic[where])
 
     def finish(self, tolerance=None, tolerance_ppm=None):
+        """Should be called after all scans are added,
+         also it's good to specify precursor measurement tolerance"""
         super().finish()
         assert not(tolerance and tolerance_ppm), "Only one tolerance option is acceptable"
         self._tolerance = tolerance
@@ -291,10 +291,12 @@ class MS2Scans(MSnScans):
 
 
 class MS1Scans(MSnScans):
+    """"MS1 part of experiment"""
     def __init__(self):
         super().__init__(1)
 
     def __getitem__(self, item):
+        """Get spetrum nearst to time"""
         if isinstance(item, float):
             index = np.searchsorted(self._times, item)
             return Spectrum(self._mza[index], self._inta[index], self._mslevel,
@@ -302,6 +304,7 @@ class MS1Scans(MSnScans):
                             self._times[index])
 
     def xic(self, mz, ppm):
+        """Extract Chromatogram of mz with tolerance in ppm"""
         if self._mslevel != 1:
             raise WrongMSLevel(1)
         res = []
