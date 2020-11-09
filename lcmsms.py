@@ -72,7 +72,7 @@ class Chromatogram:
     def get_width_pc(self, apex_pc):
         """Returns times where intensity raises above  and falls below apex_pc % of apex """
         left, right = self._get_width_indexs(apex_pc)
-        return self.t[left], self.i[right]
+        return self.t[left], self.t[right]
 
     def get_width_pc_area(self, apex_pc):
         """Finds area of peake where intensity is greater than apex_pc % of apex"""
