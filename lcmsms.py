@@ -1,21 +1,12 @@
-from argparse import ArgumentParser
-
-from pyteomics import mzml
 import numpy as np
-import pandas as pd
 from matplotlib import pyplot as plt
-import tqdm
 import scipy.signal as sgn
 from scipy.ndimage.filters import gaussian_filter1d
 from scipy.interpolate import interp1d
-from math import log10, ceil, floor
-import itertools
+from math import log10, ceil
 
 from scipy.special import erf
 from scipy.optimize import curve_fit
-
-import sys
-
 
 class WrongMSLevel(Exception):
     """Wrong MS level"""
@@ -105,9 +96,9 @@ class Chromatogram:
             index = np.searchsorted(self.t, item)
             return self.i[index]
 
-    def smooth(self, type='gaussian', **kwargs):
+    def smooth(self, kind='gaussian', **kwargs):
         """Smoth gromatogram using filter function"""
-        if type == 'gaussian':
+        if kind == 'gaussian':
             return Chromatogram(self.t, gaussian_filter1d(self.i, **kwargs))
         else:
             raise NotImplementedError('Only gaussian smoothing is supported')
@@ -158,20 +149,20 @@ class Spectrum:
         ap_mz, ap_int, _ = self._get_apex_around(mz, tolerance)
         return ap_mz, ap_int
 
-    def _resample_peak_around(self, mz, tolerance=0.05, ndots = None):
+    def _resample_peak_around(self, mz, tolerance=0.05, ndots=None):
         """Get subarea around mz -/+ tolerance and resample it to same amount of measurements"""
         ndots = ndots if ndots else len(self.__mza)
         select = self[mz-tolerance:mz+tolerance]
         res_x = np.linspace(select.mz[0], select.mz[-1], ndots)
         interp = interp1d(self.mz, self.i)
-        res_y = interp(res_x) #resample
+        res_y = interp(res_x)  # resample
         return Spectrum(res_x, res_y, self.__level, self.__prec, self.__time)
 
     def get_apex_width_pc(self, mz, apex_pc=50, tolerance=0.05):
         """Half width of MS peak"""
         apex_mz, apex_int, index = self._get_apex_around(mz, tolerance)
         resampled = self._resample_peak_around(mz, tolerance)
-        t_ = resampled.i>(apex_int*apex_pc/100)
+        t_ = resampled.i > (apex_int*apex_pc/100)
         left = np.where(t_)[0][0]
         right = np.where(t_)[0][-1]
         return resampled.mz[right]-resampled.mz[left]
@@ -239,12 +230,12 @@ class MSnScans:
     def __init__(self, mslevel):
         """Constructor for Msn"""
         self._mslevel = mslevel
-        self._tic = []  # TIC from spectrometer
+        self._tic = []    # TIC from spectrometer
         self._times = []  # Time of scans
-        self._mza = []  # List of mz arrays
-        self._inta = [] #List of intersity arrays
+        self._mza = []    # List of mz arrays
+        self._inta = []   # List of intensity arrays
         if mslevel == 2:
-            self._precs = []  #Precursors
+            self._precs = []  # Precursors
         elif mslevel == 1:
             self._precs = None
 
@@ -262,8 +253,8 @@ class MSnScans:
             self._inta.append(scan.intarray)
             if scan.mslevel == 2:
                 self._precs.append(scan.precursor)
-            return True #Appended
-        return False #Skip
+            return True  # Appended
+        return False  # Skip
 
     @property
     def mzi(self):
@@ -273,24 +264,26 @@ class MSnScans:
     def inti(self):
         return self._Indexer(self._inta)
 
+
 class MS2Scans(MSnScans):
     """MS2 part of experiment"""
     def __init__(self):
         self._tolerance = None
         self._tolerance_ppm = None
+        self._allprecs = {}
         super().__init__(2)
 
-    def _mzt(self, mz): #mz transform
+    def _mzt(self, mz):  # mz transform
         """Rounds mz according to tolerance or tolerance_ppm passed to finish"""
         if (not self._tolerance) and (not self._tolerance_ppm):
             return mz
         elif self._tolerance:
             t = int(mz/self._tolerance)*self._tolerance
-            return round(t, ceil(abs(log10(self._tolerance))) + 1) # remove rounding mantissa errors?
+            return round(t, ceil(abs(log10(self._tolerance))) + 1)  # remove rounding mantissa errors?
         elif self._tolerance_ppm:
             tol = mz*self._tolerance_ppm*1e-6
             t = int(mz/tol)*tol
-            return round(t, ceil(abs(log10(tol))) + 1) # remove rounding mantissa errors?
+            return round(t, ceil(abs(log10(tol))) + 1)  # remove rounding mantissa errors?
 
     def extract(self, prec):
         """Extract data for precursor, returns object similar to MS1 subexperiment"""
@@ -328,7 +321,7 @@ class MS1Scans(MSnScans):
         """Extract Chromatogram of mz with tolerance in ppm"""
         res = []
         for mza, inta in zip(self._mza, self._inta):
-            left  = mza.searchsorted(mz * (1 - ppm * 0.5 * 1e-6))
+            left = mza.searchsorted(mz * (1 - ppm * 0.5 * 1e-6))
             right = mza.searchsorted(mz * (1 + ppm * 0.5 * 1e-6))
             res.append(inta[left:right].sum())
 
@@ -358,7 +351,7 @@ class MS2Extracted(MS1Scans):
 
 class LCMSMSExperiment:
     """Single LCMSMS experiment"""
-    def __init__(self, mzmlsource, prec_tolerance = None):
+    def __init__(self, mzmlsource, prec_tolerance=None):
         self.ms1 = MS1Scans()
         self.ms2 = MS2Scans()
 
@@ -369,125 +362,3 @@ class LCMSMSExperiment:
 
         self.ms1.finish()
         self.ms2.finish(tolerance=prec_tolerance)
-
-
-
-if __name__ == '__main__':
-    argparser = ArgumentParser(description="iRT peptide QC tool")
-    argparser.add_argument('--mzml', type=str, required=True, help="MzML file")
-    argparser.add_argument('--targets', type=str, required=True, help="Targets file")
-    argparser.add_argument('--ms1-ppm', type=float, default=5, help="MS1 extraction window in ppm")
-    argparser.add_argument('--ms2-prec-tolerance', type=float, default=0.01, help="MS2 precursor tolerance")
-    argparser.add_argument('--width-1-pc', type=float, default=50, help="Cromatographic width 1 in % of apex")
-    argparser.add_argument('--width-2-pc', type=float, default=5, help="Cromatographic width 2 in % of apex")
-    argparser = argparser.parse_args()
-
-
-    ##### FOR TESTING ####
-    import pickle
-    import time
-
-
-    #exp = LCMSMSExperiment(tqdm.tqdm(mzml.MzML(argparser.mzml)))
-
-    # mzml_ = list(tqdm.tqdm(mzml.MzML(argparser.mzml)))
-    # with open("mzml_.pkl", "wb") as f_:
-    #     pickle.dump(mzml_, f_)
-
-
-    _start_time = time.time()
-    with open("mzml_.pkl", "rb") as f_:
-        print("Unpickling")
-        exp = LCMSMSExperiment(tqdm.tqdm(pickle.load(f_)), prec_tolerance=argparser.ms2_prec_tolerance)
-        print(f"Unpickled in {time.time()-_start_time} seconds")
-    ### ####
-
-    targets = pd.read_csv(argparser.targets, sep='\t')
-    targets_ms1 = targets[["Sequence", "Precursor_Mz"]].drop_duplicates()
-    results_ms1 = pd.DataFrame(columns=["Sequence",
-                                        "Precursor_Mz",
-                                        "Apex_time",
-                                        f"Width_{argparser.width_1_pc}_pc_time_start",
-                                        f"Width_{argparser.width_1_pc}_pc_time_end",
-                                        f"Width_{argparser.width_1_pc}_xic_area",
-                                        f"Width_{argparser.width_2_pc}_pc_time_start",
-                                        f"Width_{argparser.width_2_pc}_pc_time_end",
-                                        f"Width_{argparser.width_2_pc}_xic_area",
-                                        f"MS1_mass_apex_mz",
-                                        f"MS1_apex_height",
-                                        f"MS1_peak_halfwidth",
-                                        f"MS1_peak_area",
-                                        ])
-
-    #from matplotlib.backends.backend_pdf import PdfPages
-    #pdf = PdfPages('MS1.pdf')
-    fig, axs = plt.subplots(len(targets_ms1), 2, figsize=(15, 40), gridspec_kw={'width_ratios': [1, 1]})
-    plt.subplots_adjust(hspace=0.5)
-
-    n=0
-
-    for k, row in targets_ms1.iterrows():
-        mz = row["Precursor_Mz"]
-        ch = exp.ms1.xic(mz, argparser.ms1_ppm)
-        chs = ch.smooth(sigma=2)
-        apext, apexi = ch.get_apex()
-        width1 = chs.get_width_pc(argparser.width_1_pc)
-        width2 = chs.get_width_pc(argparser.width_2_pc)
-        area1 = chs.get_width_pc_area(argparser.width_1_pc)
-        area2 = chs.get_width_pc_area(argparser.width_2_pc)
-        spec = exp.ms1[apext]
-        ms1_apex_mz, ms1_apex_int = spec.get_apex_around(mz, 0.05)
-        ms1_hw = spec.get_apex_width_pc(mz, apex_pc=50, tolerance=0.05)
-        ms1_area = spec.get_peak_area(mz, tolerance=0.05)
-
-        ### PLOT ###
-        axs[n, 0].plot(ch.t, ch.i, "g-")
-        #axs[n, 0].plot(xictimes, xic)
-        #axs[n, 0].plot(xictimes, asym_peak(xictimes, *popt), 'r-')
-        axs[n, 0].vlines(apext, 0, apexi * 1.1)
-        axs[n, 0].title.set_text("{}  mz={}  apex@{}".format(n, mz, apext))
-        axs[n, 0].set_xlim(15, 30)
-
-        axs[n, 1].plot(ch.t, ch.i, "gx-")
-        axs[n, 1].plot(chs.t, chs.i, "rx-")
-        #axs[n, 1].plot(xictimes, asym_peak(xictimes, *popt), 'r-')
-        axs[n, 1].vlines(apext, 0, apexi)
-        axs[n, 1].title.set_text("{}  mz={:.4f}".format(n, mz))
-        axs[n, 1].hlines(apexi *0.5, *width1)#, xictimes[right1])
-        axs[n, 1].hlines(apexi *0.05, *width2)# xictimes[left2], xictimes[right2])
-        axs[n, 1].set_xlim(apext - 0.2, apext + 0.4)
-        axs[n, 1].text(0.45, 0.95, f"Area50={area1:.3e}\nArea5  ={area2:.3e}", transform=axs[n, 1].transAxes,
-                       fontsize=10, verticalalignment='top')
-        n+=1
-        ############
-
-        row['Apex_time'] = apext
-        row[f"Width_{argparser.width_1_pc}_pc_time_start"] = width1[0]
-        row[f"Width_{argparser.width_1_pc}_pc_time_end"] = width1[1]
-        row[f"Width_{argparser.width_1_pc}_xic_area"] = area1
-        row[f"Width_{argparser.width_2_pc}_pc_time_start"] = width2[0]
-        row[f"Width_{argparser.width_2_pc}_pc_time_end"] = width2[1]
-        row[f"Width_{argparser.width_2_pc}_xic_area"] = area2
-        row[f"MS1_mass_apex_mz"] = ms1_apex_mz
-        row[f"MS1_apex_height"] = ms1_apex_int
-        row[f"MS1_peak_halfwidth"] = ms1_hw
-        row[f"MS1_peak_area"] = ms1_area
-
-        results_ms1 = results_ms1.append(row)
-
-    fig.savefig("MS1.pdf", dpi=1200, format='pdf', bbox_inches='tight')
-    results_ms1.to_csv("MS1_test.csv", sep='\t', index=False)
-
-    targets_ms2 = targets[["Sequence", "Precursor_Mz", "Product_Mz"]].drop_duplicates()
-    for k, row in targets_ms2.iterrows():
-        prec, frag = row["Precursor_Mz"], row["Product_Mz"]
-        break
-
-    p1 = exp.ms2.extract(prec)
-    p1.tic.plot()
-
-    pass
-
-
-        
-
