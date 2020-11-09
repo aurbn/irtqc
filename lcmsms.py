@@ -44,7 +44,7 @@ class Chromatogram:
         """Returns internal intensity array"""
         return self.__ints
 
-    def plot(self, ax=None, *args, **kwargs):
+    def plot(self, *args, ax=None, **kwargs):
         """Plot on MPL axis"""
         if ax:
             ax.plot(self.t, self.i, *args, **kwargs)
@@ -133,6 +133,12 @@ class Spectrum:
                             self.__level, self.__prec, self.__time)
         else:
             raise TypeError
+
+    def plot(self, *args, ax=None, **kwargs):
+        if ax:
+            ax.plot(self.__mza, self.__inta, *args, **kwargs)
+        else:
+            plt.plot(self.__mza, self.__inta, *args, **kwargs)
 
     def _get_apex_around(self, mz, tolerance):
         """Find apex within mz -/+ tolerance/2"""

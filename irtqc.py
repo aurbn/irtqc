@@ -35,6 +35,9 @@ if __name__ == '__main__':
         print(f"Unpickled in {time.time()-_start_time} seconds")
     ### ####
 
+
+    ###  MS1 processing  ####
+
     targets = pd.read_csv(argparser.targets, sep='\t')
     targets_ms1 = targets[["Sequence", "Precursor_Mz"]].drop_duplicates()
     results_ms1 = pd.DataFrame(columns=["Sequence",
@@ -111,10 +114,26 @@ if __name__ == '__main__':
     fig.savefig("MS1.pdf", dpi=1200, format='pdf', bbox_inches='tight')
     results_ms1.to_csv("MS1_test.csv", sep='\t', index=False)
 
+    ###  MS2 processing  ###
+    results_ms1.set_index("Sequence", drop=True, inplace=True)
     targets_ms2 = targets[["Sequence", "Precursor_Mz", "Product_Mz"]].drop_duplicates()
+    results_ms2 = pd.DataFrame(columns=["Sequence",
+                                        "Precursor_Mz",
+                                        "Product_Mz",
+                                        "Apex_time",
+                               ])
     for k, row in targets_ms2.iterrows():
+        seq = row["Sequence"]
         prec, frag = row["Precursor_Mz"], row["Product_Mz"]
-        break
+        apext = results_ms1.loc[seq, "Apex_time"]
+        start = results_ms1.loc[seq, f"Width_{argparser.width_2_pc}_pc_time_start"]
+        stop = results_ms1.loc[seq, f"Width_{argparser.width_2_pc}_pc_time_end"]
+
+        ms2_ext = exp.ms2.extract(prec)[start:stop]
+
+        spec_apex_ms1 = ms2_ext[apext]
+        tic_apext, tic_apexi = ms2_ext.tic.get_apex()
+
 
     p1 = exp.ms2.extract(prec)
     p1.tic.plot()
