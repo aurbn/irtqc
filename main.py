@@ -53,18 +53,22 @@ class Chromatogram:
         """Returns internal intensity array"""
         return self.__ints
 
-    def plot(self, ax, *args, **kwargs):
+    def plot(self, ax=None, *args, **kwargs):
         """Plot on MPL axis"""
-        ax.plot(self.__times, self.__ints, *args, **kwargs)
+        if ax:
+            ax.plot(self.t, self.i, *args, **kwargs)
+        else:
+            plt.plot(self.t, self.i, *args, **kwargs)
+            plt.show()
 
     def get_apex(self):
         """Returns tuple (time,intensity)"""
-        peaksi, _ = sgn.find_peaks(self.__ints, threshold=self.__ints.mean())
+        peaksi, _ = sgn.find_peaks(self.i, threshold=self.i.mean())
         assert len(peaksi), "No peaks found"
-        peaksamp = self.__ints[peaksi]
+        peaksamp = self.i[peaksi]
         maxpeaki = np.argmax(peaksamp)
         apexi = peaksi[maxpeaki]
-        return self.__times[apexi], self.__ints[apexi]
+        return self.t[apexi], self.i[apexi]
 
     def _get_width_indexs(self, apex_pc):
         """Returns leftmost and rightmost index where intensity is greater apex_pc% of apex """
@@ -77,34 +81,34 @@ class Chromatogram:
     def get_width_pc(self, apex_pc):
         """Returns times where intensity raises above  and falls below apex_pc % of apex """
         left, right = self._get_width_indexs(apex_pc)
-        return self.__times[left], self.__times[right]
+        return self.t[left], self.i[right]
 
     def get_width_pc_area(self, apex_pc):
         """Finds area of peake where intensity is greater than apex_pc % of apex"""
         left, right = self._get_width_indexs(apex_pc)
-        times = self.__times[left:right]
-        times_sh = self.__times[left+1:right+1]
+        times = self.t[left:right]
+        times_sh = self.t[left+1:right+1]
         deltas = times_sh - times
-        ints = self.__ints[left:right]
+        ints = self.i[left:right]
         return np.sum(deltas * ints)
 
     def __getitem__(self, item):
         """Select subchomatogram by time"""
         if isinstance(item, slice):
             if item.step is None:
-                left = np.searchsorted(self.__times, item.start)
-                right = np.searchsorted(self.__times, item.stop)
-                return Chromatogram(self.__times[left:right], self.__ints[left:right])
+                left = np.searchsorted(self.t, item.start)
+                right = np.searchsorted(self.t, item.stop)
+                return Chromatogram(self.t[left:right], self.i[left:right])
             else:
                 raise NotImplementedError
         else:
-            index = np.searchsorted(self.__times, item)
-            return self.__ints[index]
+            index = np.searchsorted(self.t, item)
+            return self.i[index]
 
     def smooth(self, type='gaussian', **kwargs):
         """Smoth gromatogram using filter function"""
         if type == 'gaussian':
-            return Chromatogram(self.__times, gaussian_filter1d(self.__ints, **kwargs))
+            return Chromatogram(self.t, gaussian_filter1d(self.i, **kwargs))
         else:
             raise NotImplementedError('Only gaussian smoothing is supported')
 
@@ -185,7 +189,6 @@ class Spectrum:
         return resampled._get_area()
 
 
-
 class Scan:
     """Wrapper for quick access to scan fields from Pytomics"""
     def __init__(self, scan):
@@ -222,22 +225,31 @@ class Scan:
 
 class MSnScans:
     """Class for storing MSn data for single MS level"""
+    class _Indexer:
+        """Class for indexing internal lists of arrays by lists of indexes"""
+        def __init__(self, what):
+            self.__what = what
+
+        def __getitem__(self, item):
+            if isinstance(item, list) or\
+                    (isinstance(item, np.ndarray) and np.issubdtype(item.dtype, np.integer)):
+                return list([self.__what[i] for i in item])
+            return self.__what[item]
+
     def __init__(self, mslevel):
         """Constructor for Msn"""
         self._mslevel = mslevel
-        self._tic = []
-        self._times = []
-        self._mza = []
-        self._inta = []
+        self._tic = []  # TIC from spectrometer
+        self._times = []  # Time of scans
+        self._mza = []  # List of mz arrays
+        self._inta = [] #List of intersity arrays
         if mslevel == 2:
-            self._precs = []
+            self._precs = []  #Precursors
         elif mslevel == 1:
             self._precs = None
-        else:
-            raise WrongMSLevel(0, 2) #Ewww...
 
     def finish(self):
-        """Should be called after all scans are added"""
+        """Should be called after all scans are appended"""
         self._times = np.array(self._times)
         self._tic = np.array(self._tic)
 
@@ -252,6 +264,14 @@ class MSnScans:
                 self._precs.append(scan.precursor)
             return True #Appended
         return False #Skip
+
+    @property
+    def mzi(self):
+        return self._Indexer(self._mza)
+
+    @property
+    def inti(self):
+        return self._Indexer(self._inta)
 
 class MS2Scans(MSnScans):
     """MS2 part of experiment"""
@@ -272,11 +292,12 @@ class MS2Scans(MSnScans):
             t = int(mz/tol)*tol
             return round(t, ceil(abs(log10(t))) + 1) # remove rounding mantissa errors?
 
-    def tic(self, prec):
-        """TIC for precursor"""
-        prec = self._mzt(prec)
-        where = np.where(self._precs == prec)[0]
-        return Chromatogram(self._times[where], self._tic[where])
+    def extract(self, prec):
+        """Extract data for precursor, returns object similar to MS1 subexperiment"""
+        prec_ = self._mzt(prec)
+        where = np.where(self._precs == prec_)[0]
+        return MS2Extracted(prec, self._times[where], self.mzi[where],
+                            self.inti[where], self._tic[where])
 
     def finish(self, tolerance=None, tolerance_ppm=None):
         """Should be called after all scans are added,
@@ -292,8 +313,8 @@ class MS2Scans(MSnScans):
 
 class MS1Scans(MSnScans):
     """"MS1 part of experiment"""
-    def __init__(self):
-        super().__init__(1)
+    def __init__(self, level=1):
+        super().__init__(level)
 
     def __getitem__(self, item):
         """Get spetrum nearst to time"""
@@ -305,8 +326,6 @@ class MS1Scans(MSnScans):
 
     def xic(self, mz, ppm):
         """Extract Chromatogram of mz with tolerance in ppm"""
-        if self._mslevel != 1:
-            raise WrongMSLevel(1)
         res = []
         for mza, inta in zip(self._mza, self._inta):
             left  = mza.searchsorted(mz * (1 - ppm * 0.5 * 1e-6))
@@ -320,6 +339,21 @@ class MS1Scans(MSnScans):
     @property
     def tic(self):
         return Chromatogram(self._times, self._tic)
+
+
+class MS2Extracted(MS1Scans):
+    """Extracted MS2 scans for precursor"""
+    def __init__(self, prec, times, mza, inta, tic):
+        super().__init__(-2)
+        self._mza = mza
+        self._inta = inta
+        self._times = times
+        self._tic = tic
+        self._prec = prec
+
+    @property
+    def prec(self):
+        return self._prec
 
 
 class LCMSMSExperiment:
@@ -449,8 +483,10 @@ if __name__ == '__main__':
         prec, frag = row["Precursor_Mz"], row["Product_Mz"]
         break
 
-    ex = exp.ms2.tic(prec)
-    plt.plot(ex.t, ex.i)
+    p1 = exp.ms2.extract(prec)
+    p1.tic.plot()
+    pass
+
 
         
 
