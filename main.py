@@ -133,12 +133,12 @@ class Spectrum:
 
     def __getitem__(self, item):
         if isinstance(item, float):
-            index = np.searchsorted(self.__mza, item)
-            return self.__inta[index]
+            index = np.searchsorted(self.mz, item)
+            return self.i[index]
         elif isinstance(item, slice):
-            left = np.searchsorted(self.__mza, item.start)
-            right = np.searchsorted(self.__mza, item.stop)
-            return Spectrum(self.__mza[left:right], self.__inta[left:right],
+            left = np.searchsorted(self.mz, item.start)
+            right = np.searchsorted(self.mz, item.stop)
+            return Spectrum(self.mz[left:right], self.i[left:right],
                             self.__level, self.__prec, self.__time)
         else:
             raise TypeError
@@ -146,12 +146,12 @@ class Spectrum:
     def _get_apex_around(self, mz, tolerance):
         """Find apex within mz -/+ tolerance/2"""
         select = self[mz-tolerance:mz+tolerance]
-        peaksi, _ = sgn.find_peaks(select.__inta)
+        peaksi, _ = sgn.find_peaks(select.i)
         assert len(peaksi), "No peaks found"
-        peaksamp = select.__inta[peaksi]
+        peaksamp = select.i[peaksi]
         maxpeaki = np.argmax(peaksamp)
         apexi = peaksi[maxpeaki]
-        return select.__mza[apexi], select.__inta[apexi], apexi
+        return select.mz[apexi], select.i[apexi], apexi
 
     def get_apex_around(self, mz, tolerance):
         """Returns tuple of apex_mz, apex_int"""
@@ -163,7 +163,7 @@ class Spectrum:
         ndots = ndots if ndots else len(self.__mza)
         select = self[mz-tolerance:mz+tolerance]
         res_x = np.linspace(select.mz[0], select.mz[-1], ndots)
-        interp = interp1d(self.__mza, self.__inta)
+        interp = interp1d(self.mz, self.i)
         res_y = interp(res_x) #resample
         return Spectrum(res_x, res_y, self.__level, self.__prec, self.__time)
 
@@ -171,16 +171,16 @@ class Spectrum:
         """Half width of MS peak"""
         apex_mz, apex_int, index = self._get_apex_around(mz, tolerance)
         resampled = self._resample_peak_around(mz, tolerance)
-        t_ = resampled.__inta>(apex_int*apex_pc/100)
+        t_ = resampled.i>(apex_int*apex_pc/100)
         left = np.where(t_)[0][0]
         right = np.where(t_)[0][-1]
-        return resampled.__mza[right]-resampled.__mza[left]
+        return resampled.mz[right]-resampled.mz[left]
 
     def _get_area(self):
         """Get area under whole spectrum"""
-        y1 = self.__mza[:-1]
-        y2 = self.__mza[1:]
-        x = self.__inta[:-1]
+        y1 = self.mz[:-1]
+        y2 = self.mz[1:]
+        x = self.i[:-1]
         return np.sum((y2-y1)*x)
 
     def get_peak_area(self, mz, tolerance=0.05):
@@ -485,6 +485,7 @@ if __name__ == '__main__':
 
     p1 = exp.ms2.extract(prec)
     p1.tic.plot()
+
     pass
 
 
