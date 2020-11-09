@@ -52,9 +52,9 @@ class Chromatogram:
             plt.plot(self.t, self.i, *args, **kwargs)
             plt.show()
 
-    def get_apex(self):
+    def get_apex(self, threshold=None):
         """Returns tuple (time,intensity)"""
-        peaksi, _ = sgn.find_peaks(self.i, threshold=self.i.mean())
+        peaksi, _ = sgn.find_peaks(self.i, threshold=threshold if threshold is None else self.i.mean())
         assert len(peaksi), "No peaks found"
         peaksamp = self.i[peaksi]
         maxpeaki = np.argmax(peaksamp)
@@ -349,10 +349,22 @@ class MS2Extracted(MS1Scans):
         self._times = times
         self._tic = tic
         self._prec = prec
+        self._precs = None
 
     @property
     def prec(self):
         return self._prec
+
+    def __getitem__(self, item):
+        if isinstance(item, float):
+            return super().__getitem__(item)
+        if isinstance(item, slice):
+            if item.step is None:
+                left = np.searchsorted(self._times, item.start)
+                right = np.searchsorted(self._times, item.stop)
+                return MS2Extracted(self.prec, self._times[left:right],
+                                    self.mzi[left:right], self.inti[left:right],
+                                    self._tic[left:right])
 
 
 class LCMSMSExperiment:
