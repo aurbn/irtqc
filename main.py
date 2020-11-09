@@ -281,16 +281,16 @@ class MS2Scans(MSnScans):
         super().__init__(2)
 
     def _mzt(self, mz): #mz transform
-        """Rounds mz according to tolerance of tolerance ppm passed to finish"""
+        """Rounds mz according to tolerance or tolerance_ppm passed to finish"""
         if (not self._tolerance) and (not self._tolerance_ppm):
             return mz
         elif self._tolerance:
             t = int(mz/self._tolerance)*self._tolerance
-            return round(t, ceil(abs(log10(t))) + 1) # remove rounding mantissa errors?
+            return round(t, ceil(abs(log10(self._tolerance))) + 1) # remove rounding mantissa errors?
         elif self._tolerance_ppm:
             tol = mz*self._tolerance_ppm*1e-6
             t = int(mz/tol)*tol
-            return round(t, ceil(abs(log10(t))) + 1) # remove rounding mantissa errors?
+            return round(t, ceil(abs(log10(tol))) + 1) # remove rounding mantissa errors?
 
     def extract(self, prec):
         """Extract data for precursor, returns object similar to MS1 subexperiment"""
