@@ -8,6 +8,7 @@ import tqdm
 import scipy.signal as sgn
 from scipy.ndimage.filters import gaussian_filter1d
 from scipy.interpolate import interp1d
+from math import log10, ceil, floor
 import itertools
 
 from scipy.special import erf
@@ -23,7 +24,6 @@ import sys
 
 class WrongMSLevel(Exception):
     """Wrong MS level"""
-
     def __init__(self, expected, given = None):
         """Constructor for WrongMSLevel"""
         self.__given = given
@@ -52,7 +52,6 @@ class T:
 
 class Chromatogram:
     """Simple chromatogram"""
-
     def __init__(self, times, ints):
         """Constructor for Chromatogram"""
         self.__times = times
@@ -120,10 +119,8 @@ class Chromatogram:
 
 class Spectrum:
     """Single spectrum"""
-
     def __init__(self, mza, inta, mslevel=None, precursor=None, time=None):
         """Constructor for Spectrum"""
-
         self.__mza = mza
         self.__inta = inta
         self.__level = mslevel
@@ -229,73 +226,104 @@ class Scan:
 
 class MSnScans:
     """Class for storing MSn data for single MS level"""
-
     def __init__(self, mslevel):
         """Constructor for Msn"""
-        self.__mslevel = mslevel
-        self.__tic = []
-        self.__times = []
-        self.__mza = []
-        self.__inta = []
+        self._mslevel = mslevel
+        self._tic = []
+        self._times = []
+        self._mza = []
+        self._inta = []
         if mslevel == 2:
-            self.__precs = []
+            self._precs = []
         elif mslevel == 1:
-            self.__precs = None
+            self._precs = None
         else:
             raise WrongMSLevel(0, 2) #Ewww...
 
+    def finish(self):
+        """Should be called after all values are added"""
+        self._times = np.array(self._times)
+        self._tic = np.array(self._tic)
+
     def append(self, scan: Scan) -> bool:
-        if scan.mslevel == self.__mslevel:
-            self.__tic.append(scan.tic)
-            self.__times.append(scan.time)
-            self.__mza.append(scan.mzarray)
-            self.__inta.append(scan.intarray)
+        if scan.mslevel == self._mslevel:
+            self._tic.append(scan.tic)
+            self._times.append(scan.time)
+            self._mza.append(scan.mzarray)
+            self._inta.append(scan.intarray)
             if scan.mslevel == 2:
-                self.__precs.append(scan.precursor)
+                self._precs.append(scan.precursor)
             return True #Appended
         return False #Skip
 
-    def finish(self):
-        """Should be called after all values are added"""
+class MS2Scans(MSnScans):
+    def __init__(self):
+        self._tolerance = None
+        self._tolerance_ppm = None
+        super().__init__(2)
 
-        self.__times = np.array(self.__times)
-        self.__tic = np.array(self.__tic)
-        if self.__mslevel == 2:
-            self.__precs = np.array(self.__precs)
+    def _mzt(self, mz): #mz transform
+        """Rounds mz according to tolerance of tolerance ppm passed to finish"""
+        if (not self._tolerance) and (not self._tolerance_ppm):
+            return mz
+        elif self._tolerance:
+            t = int(mz/self._tolerance)*self._tolerance
+            return round(t, ceil(abs(log10(t))) + 1) # remove rounding mantissa errors?
+        elif self._tolerance_ppm:
+            tol = mz*self._tolerance_ppm*1e-6
+            t = int(mz/tol)*tol
+            return round(t, ceil(abs(log10(t))) + 1) # remove rounding mantissa errors?
 
-    @property
-    def tic(self):
-        return Chromatogram(self.__times, self.__tic)
+    def tic(self, prec):
+        """TIC for precursor"""
+        prec = self._mzt(prec)
+        where = np.where(self._precs == prec)[0]
+        return Chromatogram(self._times[where], self._tic[where])
+
+    def finish(self, tolerance=None, tolerance_ppm=None):
+        super().finish()
+        assert not(tolerance and tolerance_ppm), "Only one tolerance option is acceptable"
+        self._tolerance = tolerance
+        self._tolerance_ppm = tolerance_ppm
+        precs = list(map(self._mzt, self._precs))
+        self._allprecs = set(precs)
+        self._precs = np.array(list(precs))
+
+
+class MS1Scans(MSnScans):
+    def __init__(self):
+        super().__init__(1)
+
+    def __getitem__(self, item):
+        if isinstance(item, float):
+            index = np.searchsorted(self._times, item)
+            return Spectrum(self._mza[index], self._inta[index], self._mslevel,
+                            self._precs[index] if self._precs else None,
+                            self._times[index])
 
     def xic(self, mz, ppm):
-        if self.__mslevel != 1:
+        if self._mslevel != 1:
             raise WrongMSLevel(1)
         res = []
-        for mza, inta in zip(self.__mza, self.__inta):
+        for mza, inta in zip(self._mza, self._inta):
             left  = mza.searchsorted(mz * (1 - ppm * 0.5 * 1e-6))
             right = mza.searchsorted(mz * (1 + ppm * 0.5 * 1e-6))
             res.append(inta[left:right].sum())
 
         res = np.array(res)
-        assert len(res) == len(self.__times), "Wrong length of chromatogram"
-        return Chromatogram(self.__times, res)
+        assert len(res) == len(self._times), "Wrong length of chromatogram"
+        return Chromatogram(self._times, res)
 
-    def __getitem__(self, item):
-        if isinstance(item, float):
-            index = np.searchsorted(self.__times, item)
-            return Spectrum(self.__mza[index], self.__inta[index], self.__mslevel,
-                            self.__precs[index] if self.__precs else None,
-                            self.__times[index])
-        else:
-            raise NotImplementedError
+    @property
+    def tic(self):
+        return Chromatogram(self._times, self._tic)
 
 
 class LCMSMSExperiment:
     """Single LCMSMS experiment"""
-
-    def __init__(self, mzmlsource):
-        self.ms1 = MSnScans(mslevel=1)
-        self.ms2 = MSnScans(mslevel=2)
+    def __init__(self, mzmlsource, prec_tolerance = None):
+        self.ms1 = MS1Scans()
+        self.ms2 = MS2Scans()
 
         for s_ in mzmlsource:
             scan = Scan(s_)
@@ -303,7 +331,7 @@ class LCMSMSExperiment:
             self.ms2.append(scan)
 
         self.ms1.finish()
-        self.ms2.finish()
+        self.ms2.finish(tolerance=prec_tolerance)
 
 
 
@@ -312,25 +340,30 @@ if __name__ == '__main__':
     argparser.add_argument('--mzml', type=str, required=True, help="MzML file")
     argparser.add_argument('--targets', type=str, required=True, help="Targets file")
     argparser.add_argument('--ms1-ppm', type=float, default=5, help="MS1 extraction window in ppm")
+    argparser.add_argument('--ms2-prec-tolerance', type=float, default=0.01, help="MS2 precursor tolerance")
     argparser.add_argument('--width-1-pc', type=float, default=50, help="Cromatographic width 1 in % of apex")
     argparser.add_argument('--width-2-pc', type=float, default=5, help="Cromatographic width 2 in % of apex")
     argparser = argparser.parse_args()
 
-    # exp = LCMSMSExperiment(tqdm.tqdm(mzml.MzML(argparser.mzml)))
 
     ##### FOR TESTING ####
     import pickle
     import time
 
-    # with open("exp.pkl", "wb") as f_:
-    #     pickle.dump(exp, f_)
+
+    #exp = LCMSMSExperiment(tqdm.tqdm(mzml.MzML(argparser.mzml)))
+
+    # mzml_ = list(tqdm.tqdm(mzml.MzML(argparser.mzml)))
+    # with open("mzml_.pkl", "wb") as f_:
+    #     pickle.dump(mzml_, f_)
+
 
     _start_time = time.time()
-    with open("exp.pkl", "rb") as f_:
+    with open("mzml_.pkl", "rb") as f_:
         print("Unpickling")
-        exp = pickle.load(f_)
+        exp = LCMSMSExperiment(tqdm.tqdm(pickle.load(f_)), prec_tolerance=argparser.ms2_prec_tolerance)
         print(f"Unpickled in {time.time()-_start_time} seconds")
-    #### ####
+    ### ####
 
     targets = pd.read_csv(argparser.targets, sep='\t')
     targets_ms1 = targets[["Sequence", "Precursor_Mz"]].drop_duplicates()
@@ -407,3 +440,14 @@ if __name__ == '__main__':
 
     fig.savefig("MS1.pdf", dpi=1200, format='pdf', bbox_inches='tight')
     results_ms1.to_csv("MS1_test.csv", sep='\t', index=False)
+
+    targets_ms2 = targets[["Sequence", "Precursor_Mz", "Product_Mz"]].drop_duplicates()
+    for k, row in targets_ms2.iterrows():
+        prec, frag = row["Precursor_Mz"], row["Product_Mz"]
+        break
+
+    ex = exp.ms2.tic(prec)
+    plt.plot(ex.t, ex.i)
+
+        
+
