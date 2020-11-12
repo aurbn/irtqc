@@ -149,7 +149,7 @@ class Spectrum:
 
     def _get_apex_around(self, mz, tolerance):
         """Find apex within mz -/+ tolerance/2"""
-        select = self[mz-tolerance:mz+tolerance]
+        select = self[mz-tolerance/2:mz+tolerance/2]
         peaksi, _ = sgn.find_peaks(select.i)
         assert len(peaksi), "No peaks found"
         peaksamp = select.i[peaksi]
@@ -165,7 +165,7 @@ class Spectrum:
     def _resample_peak_around(self, mz, tolerance=0.05, ndots=None):
         """Get subarea around mz -/+ tolerance and resample it to same amount of measurements"""
         ndots = ndots if ndots else len(self.__mza)
-        select = self[mz-tolerance:mz+tolerance]
+        select = self[mz-tolerance/2:mz+tolerance/2]
         res_x = np.linspace(select.mz[0], select.mz[-1], ndots)
         interp = interp1d(self.mz, self.i)
         res_y = interp(res_x)  # resample
