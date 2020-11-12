@@ -26,6 +26,18 @@ class WrongMSLevel(Exception):
         else:
             return f'Wrong MS level, should be {self.__expected}'
 
+class PeaksNotFound(Exception):
+    def __init__(self, mz, tolerance=None, where=None):
+        self.__mz = mz
+        self.__tolerance = tolerance
+        self.__whrere = where
+
+    def __str__(self):
+        res = f"No peaks found at {self.__mz}" + \
+              "" if self.__tolerance is None else f" with tolerance {self.__tolerance}" + \
+              "" if self.__whrere is None else f" in {self.__whrere}"
+        return res
+
 
 class Chromatogram:
     """Simple chromatogram"""
@@ -151,7 +163,8 @@ class Spectrum:
         """Find apex within mz -/+ tolerance/2"""
         select = self[mz-tolerance/2:mz+tolerance/2]
         peaksi, _ = sgn.find_peaks(select.i)
-        assert len(peaksi), "No peaks found"
+        if not len(peaksi):
+            raise PeaksNotFound(mz, tolerance, self)
         peaksamp = select.i[peaksi]
         maxpeaki = np.argmax(peaksamp)
         apexi = peaksi[maxpeaki]
