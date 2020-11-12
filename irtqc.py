@@ -4,6 +4,7 @@ import pandas as pd
 from lcmsms import *  # TODO: Fix later
 from matplotlib import pyplot as plt
 from matplotlib.backends.backend_pdf import PdfPages
+from pyteomics import mzml
 
 if __name__ == '__main__':
     argparser = ArgumentParser(description="iRT peptide QC tool")
@@ -22,20 +23,22 @@ if __name__ == '__main__':
     import time
 
 
-    #exp = LCMSMSExperiment(tqdm.tqdm(mzml.MzML(argparser.mzml)))
+    exp = LCMSMSExperiment(tqdm.tqdm(mzml.MzML(argparser.mzml)), prec_tolerance=argparser.ms2_prec_tolerance)
+    #pickle.dump(exp, "exp.pkl")
+    #raise Exception
 
-    # mzml_ = list(tqdm.tqdm(mzml.MzML(argparser.mzml)))
-    # with open("mzml_.pkl", "wb") as f_:
+    #mzml_ = list(tqdm.tqdm(mzml.MzML(argparser.mzml)))
+    #with open("mzml_.pkl", "wb") as f_:
     #     pickle.dump(mzml_, f_)
+    #raise Exception
 
-
-    _start_time = time.time()
-    with open("mzml_.pkl", "rb") as f_:
-        print("Unpickling")
-        exp = LCMSMSExperiment(tqdm.tqdm(pickle.load(f_)),
-                                      prec_tolerance=argparser.ms2_prec_tolerance)
-        print(f"Unpickled in {time.time()-_start_time} seconds")
-    ### ####
+    # _start_time = time.time()
+    # with open("mzml_.pkl", "rb") as f_:
+    #     print("Unpickling")
+    #     exp = LCMSMSExperiment(tqdm.tqdm(pickle.load(f_)),
+    #                                   prec_tolerance=argparser.ms2_prec_tolerance)
+    #     print(f"Unpickled in {time.time()-_start_time} seconds")
+    # ### ####
 
     b_fname = ".".join(argparser.mzml.split(".")[:-1])
     pdf = PdfPages(b_fname+"_Figs.pdf")
