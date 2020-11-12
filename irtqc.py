@@ -1,7 +1,7 @@
 from argparse import ArgumentParser
 import tqdm
 import pandas as pd
-import lcmsms
+from lcmsms import *  # TODO: Fix later
 from matplotlib import pyplot as plt
 
 if __name__ == '__main__':
@@ -10,6 +10,7 @@ if __name__ == '__main__':
     argparser.add_argument('--targets', type=str, required=True, help="Targets file")
     argparser.add_argument('--ms1-ppm', type=float, default=5, help="MS1 extraction window in ppm")
     argparser.add_argument('--ms2-prec-tolerance', type=float, default=0.01, help="MS2 precursor tolerance")
+    argparser.add_argument('--ms2-frag-tolerance', type=float, default=1, help="MS2 precursor tolerance")
     argparser.add_argument('--width-1-pc', type=float, default=50, help="Cromatographic width 1 in % of apex")
     argparser.add_argument('--width-2-pc', type=float, default=5, help="Cromatographic width 2 in % of apex")
     argparser = argparser.parse_args()
@@ -30,7 +31,7 @@ if __name__ == '__main__':
     _start_time = time.time()
     with open("mzml_.pkl", "rb") as f_:
         print("Unpickling")
-        exp = lcmsms.LCMSMSExperiment(tqdm.tqdm(pickle.load(f_)),
+        exp = LCMSMSExperiment(tqdm.tqdm(pickle.load(f_)),
                                       prec_tolerance=argparser.ms2_prec_tolerance)
         print(f"Unpickled in {time.time()-_start_time} seconds")
     ### ####
@@ -53,6 +54,7 @@ if __name__ == '__main__':
                                         f"MS1_apex_height",
                                         f"MS1_peak_halfwidth",
                                         f"MS1_peak_area",
+                                        f"TIC_MS2",
                                         ])
 
     #from matplotlib.backends.backend_pdf import PdfPages
@@ -111,8 +113,7 @@ if __name__ == '__main__':
 
         results_ms1 = results_ms1.append(row)
 
-    fig.savefig("MS1.pdf", dpi=1200, format='pdf', bbox_inches='tight')
-    results_ms1.to_csv("MS1_test.csv", sep='\t', index=False)
+
 
     ###  MS2 processing  ###
     results_ms1.set_index("Sequence", drop=True, inplace=True)
@@ -120,25 +121,55 @@ if __name__ == '__main__':
     results_ms2 = pd.DataFrame(columns=["Sequence",
                                         "Precursor_Mz",
                                         "Product_Mz",
-                                        "Apex_time",
+                                        "MS2_TIC_Apex_time",
+                                        "MS2_mass_apex_mz",
+                                        "MS2_apex_height",
+                                        "MS2_peak_halfwidth",
+                                        "MS2_peak_area",
                                ])
-    for k, row in targets_ms2.iterrows():
-        seq = row["Sequence"]
-        prec, frag = row["Precursor_Mz"], row["Product_Mz"]
+
+    for k, grp in targets_ms2.groupby(by=["Sequence", "Precursor_Mz"]):
+        seq = k[0]
+        prec = k[1]
         apext = results_ms1.loc[seq, "Apex_time"]
         start = results_ms1.loc[seq, f"Width_{argparser.width_2_pc}_pc_time_start"]
         stop = results_ms1.loc[seq, f"Width_{argparser.width_2_pc}_pc_time_end"]
 
-        ms2_ext = exp.ms2.extract(prec)[start:stop]
+        #Dity
+        delta_t = 0.5
+        ms2_ext = exp.ms2.extract(prec)[start-delta_t:stop+delta_t]
 
-        spec_apex_ms1 = ms2_ext[apext]
-        tic_apext, tic_apexi = ms2_ext.tic.get_apex()
+        #spec = ms2_ext[apext]
+        tic_apext, tic_apexint = ms2_ext.tic.get_apex()
+        results_ms1.loc[seq, "TIC_MS2"] = tic_apexint
+        spec = ms2_ext[tic_apext]
+        for kk, row in grp.iterrows():
+            frag = row["Product_Mz"]
+            try:
+                fmz, fint = spec.get_apex_around(frag, argparser.ms2_frag_tolerance)
+                f_hw = spec.get_apex_width_pc(frag, apex_pc=50, tolerance=argparser.ms2_frag_tolerance)
+                f_area = spec.get_peak_area(fmz, tolerance=argparser.ms2_frag_tolerance)
+            except PeaksNotFound:
+                print(f"No MS2 peak for {prec}/{frag}")
+                f_hw = 0
+                f_area = 0
+                fmz = 0
+                fint = 0
 
 
-    p1 = exp.ms2.extract(prec)
-    p1.tic.plot()
+            row["MS2_TIC_Apex_time"] = tic_apext
+            row["MS2_mass_apex_mz"] = fmz
+            row["MS2_apex_height"] = fint
+            row["MS2_peak_halfwidth"] = f_hw
+            row["MS2_peak_area"] = f_area
+            results_ms2 = results_ms2.append(row)
 
-    pass
+    results_ms2.set_index("Sequence", drop=True, inplace=True)
+    fig.savefig("MS1.pdf", dpi=1200, format='pdf', bbox_inches='tight')
+    results_ms1.to_csv("MS1_test.csv", sep='\t')
+    results_ms2.to_csv("MS2_test.csv", sep='\t')
+
+
 
 
         
