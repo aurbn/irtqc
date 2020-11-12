@@ -3,6 +3,7 @@ import tqdm
 import pandas as pd
 from lcmsms import *  # TODO: Fix later
 from matplotlib import pyplot as plt
+from matplotlib.backends.backend_pdf import PdfPages
 
 if __name__ == '__main__':
     argparser = ArgumentParser(description="iRT peptide QC tool")
@@ -36,6 +37,9 @@ if __name__ == '__main__':
         print(f"Unpickled in {time.time()-_start_time} seconds")
     ### ####
 
+    b_fname = ".".join(argparser.mzml.split(".")[:-1])
+    pdf = PdfPages(b_fname+"_Figs.pdf")
+
 
     ###  MS1 processing  ####
 
@@ -59,6 +63,7 @@ if __name__ == '__main__':
 
     #from matplotlib.backends.backend_pdf import PdfPages
     #pdf = PdfPages('MS1.pdf')
+
     fig, axs = plt.subplots(len(targets_ms1), 2, figsize=(15, 40), gridspec_kw={'width_ratios': [1, 1]})
     plt.subplots_adjust(hspace=0.5)
 
@@ -113,6 +118,9 @@ if __name__ == '__main__':
 
         results_ms1 = results_ms1.append(row)
 
+    pdf.savefig(fig)
+    plt.close(fig)
+
 
 
     ###  MS2 processing  ###
@@ -127,8 +135,12 @@ if __name__ == '__main__':
                                         "MS2_peak_halfwidth",
                                         "MS2_peak_area",
                                ])
-
+    n_ = max(map(lambda x: len(x[1]), targets_ms2.groupby(by=["Sequence", "Precursor_Mz"])))
+    fig, axs = plt.subplots(len(targets_ms1), 3+n_, figsize=(15, 80))
+    plt.subplots_adjust(hspace=0.5)
+    n = -1
     for k, grp in targets_ms2.groupby(by=["Sequence", "Precursor_Mz"]):
+        n+=1
         seq = k[0]
         prec = k[1]
         apext = results_ms1.loc[seq, "Apex_time"]
@@ -137,25 +149,41 @@ if __name__ == '__main__':
 
         #Dity
         delta_t = 0.5
-        ms2_ext = exp.ms2.extract(prec)[start-delta_t:stop+delta_t]
+        ms2_all = exp.ms2.extract(prec)
+        ms2_ext = ms2_all[start-delta_t:stop+delta_t]
 
         #spec = ms2_ext[apext]
         tic_apext, tic_apexint = ms2_ext.tic.get_apex()
         results_ms1.loc[seq, "TIC_MS2"] = tic_apexint
         spec = ms2_ext[tic_apext]
+
+        axs[n, 0].plot(ms2_all.tic.t, ms2_all.tic.i, "g-")
+        axs[n, 0].title.set_text("TIC MS2 mz={:.2f}\n apex@{:.2f}".format(prec, tic_apext))
+        axs[n, 1].plot(ms2_ext.tic.t, ms2_ext.tic.i, "g-")
+        axs[n, 1].vlines(tic_apext, 0, tic_apexint, "r")
+        spec.plot(ax=axs[n, 2])
+        axs[n, 2].title.set_text("MS/MS for\n {:.2f}".format(prec))
+
+        nn = 3
         for kk, row in grp.iterrows():
             frag = row["Product_Mz"]
             try:
                 fmz, fint = spec.get_apex_around(frag, argparser.ms2_frag_tolerance)
                 f_hw = spec.get_apex_width_pc(frag, apex_pc=50, tolerance=argparser.ms2_frag_tolerance)
                 f_area = spec.get_peak_area(fmz, tolerance=argparser.ms2_frag_tolerance)
+                s_ext = spec[fmz-argparser.ms2_frag_tolerance/2:fmz+argparser.ms2_frag_tolerance/2]
+                s_ext.plot(ax=axs[n, nn])
+                axs[n, nn].title.set_text("MS2 zoom\n mz={:.2f}".format(fmz))
+                axs[n, nn].vlines(frag, 0, max(s_ext.i), "r")
+                axs[n, 2].plot([frag], [fint], "rx")#, markersize=15)
+
             except PeaksNotFound:
-                print(f"No MS2 peak for {prec}/{frag}")
+                print(f"No MS2 peak for {prec:.4f}/{frag:.4f}")
                 f_hw = 0
                 f_area = 0
                 fmz = 0
                 fint = 0
-
+            nn += 1
 
             row["MS2_TIC_Apex_time"] = tic_apext
             row["MS2_mass_apex_mz"] = fmz
@@ -164,14 +192,17 @@ if __name__ == '__main__':
             row["MS2_peak_area"] = f_area
             results_ms2 = results_ms2.append(row)
 
+    pdf.savefig(fig)
+    plt.close(fig)
+
     results_ms2.set_index("Sequence", drop=True, inplace=True)
     fig.savefig("MS1.pdf", dpi=1200, format='pdf', bbox_inches='tight')
-    b_fname = ".".join(argparser.mzml.split(".")[:-1])
     ms1_fname = b_fname+"_MS1_table.csv"
     ms2_fname = b_fname+"_MS2_table.csv"
     results_ms1.to_csv(ms1_fname, sep='\t')
     results_ms2.to_csv(ms2_fname, sep='\t')
 
+    pdf.close()
 
 
 
