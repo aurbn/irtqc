@@ -134,11 +134,18 @@ class Spectrum:
         else:
             raise TypeError
 
-    def plot(self, *args, ax=None, **kwargs):
+    def plot(self, *args, ax=None, marks=None, **kwargs):
+        if marks:
+            mindexs = [np.searchsorted(self.__mza, x) for x in marks]
+            mys = [self.__inta[x] for x in mindexs]
         if ax:
             ax.plot(self.__mza, self.__inta, *args, **kwargs)
+            if marks:
+                ax.scatter(marks, mys, "x")
         else:
             plt.plot(self.__mza, self.__inta, *args, **kwargs)
+            if marks:
+                plt.scatter(marks, mys, "x")
 
     def _get_apex_around(self, mz, tolerance):
         """Find apex within mz -/+ tolerance/2"""
