@@ -166,8 +166,11 @@ if __name__ == '__main__':
 
     results_ms2.set_index("Sequence", drop=True, inplace=True)
     fig.savefig("MS1.pdf", dpi=1200, format='pdf', bbox_inches='tight')
-    results_ms1.to_csv("MS1_test.csv", sep='\t')
-    results_ms2.to_csv("MS2_test.csv", sep='\t')
+    b_fname = ".".join(argparser.mzml.split(".")[:-1])
+    ms1_fname = b_fname+"_MS1_table.csv"
+    ms2_fname = b_fname+"_MS2_table.csv"
+    results_ms1.to_csv(ms1_fname, sep='\t')
+    results_ms2.to_csv(ms2_fname, sep='\t')
 
 
 
