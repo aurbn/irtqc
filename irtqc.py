@@ -152,10 +152,8 @@ if __name__ == '__main__':
         start = results_ms1.loc[seq, f"Width_{argparser.width_2_pc}_pc_time_start"]
         stop = results_ms1.loc[seq, f"Width_{argparser.width_2_pc}_pc_time_end"]
 
-        #Dity
-        delta_t = 0.5
         ms2_all = exp.ms2.extract(prec)
-        ms2_ext = ms2_all[start-delta_t:stop+delta_t]
+        ms2_ext = ms2_all[start-argparser.ms2_frag_tolerance/2:stop+argparser.ms2_frag_tolerance/2]
 
         #spec = ms2_ext[apext]
         tic_apext, tic_apexint = ms2_ext.tic.get_apex()
