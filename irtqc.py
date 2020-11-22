@@ -1,10 +1,10 @@
 from argparse import ArgumentParser
 import tqdm
 import pandas as pd
-from lcmsms import *  # TODO: Fix later
 from matplotlib import pyplot as plt
 from matplotlib.backends.backend_pdf import PdfPages
 from pyteomics import mzml
+import lcmsms
 
 if __name__ == '__main__':
     argparser = ArgumentParser(description="iRT peptide QC tool")
@@ -15,37 +15,39 @@ if __name__ == '__main__':
     argparser.add_argument('--ms2-frag-tolerance', type=float, default=1, help="MS2 precursor tolerance")
     argparser.add_argument('--width-1-pc', type=float, default=50, help="Cromatographic width 1 in % of apex")
     argparser.add_argument('--width-2-pc', type=float, default=5, help="Cromatographic width 2 in % of apex")
+    argparser.add_argument('--debug', action="store_true", help="Pickle cache input file")
     argparser = argparser.parse_args()
 
-
-    ##### FOR TESTING ####
-    import pickle
-    import time
-
-
-    exp = LCMSMSExperiment(tqdm.tqdm(mzml.MzML(argparser.mzml)), prec_tolerance=argparser.ms2_prec_tolerance)
-    #pickle.dump(exp, "exp.pkl")
-    #raise Exception
-
-    #mzml_ = list(tqdm.tqdm(mzml.MzML(argparser.mzml)))
-    #with open("mzml_.pkl", "wb") as f_:
-    #     pickle.dump(mzml_, f_)
-    #raise Exception
-
-    # _start_time = time.time()
-    # with open("mzml_.pkl", "rb") as f_:
-    #     print("Unpickling")
-    #     exp = LCMSMSExperiment(tqdm.tqdm(pickle.load(f_)),
-    #                                   prec_tolerance=argparser.ms2_prec_tolerance)
-    #     print(f"Unpickled in {time.time()-_start_time} seconds")
-    # ### ####
 
     b_fname = ".".join(argparser.mzml.split(".")[:-1])
     pdf = PdfPages(b_fname+"_Figs.pdf")
 
+    if argparser.debug:
+        import pickle
+        import time
+        import os
+
+        if os.path.exists(argparser.mzml+".pkl"):
+            with open(argparser.mzml+".pkl", "rb") as f_:
+                _start_time = time.time()
+                print("Unpickling")
+                exp = lcmsms.LCMSMSExperiment(tqdm.tqdm(pickle.load(f_)),
+                                          prec_tolerance=argparser.ms2_prec_tolerance)
+                print(f"Unpickled in {time.time()-_start_time} seconds")
+        else:
+            print("Reading and pickling")
+            mzml_ = list(tqdm.tqdm(mzml.MzML(argparser.mzml)))
+            with open(argparser.mzml+".pkl", "wb") as f_:
+                pickle.dump(mzml_, f_)
+            print("Pickled, parsing experiment")
+            exp = lcmsms.LCMSMSExperiment(tqdm.tqdm(mzml_),
+                                          prec_tolerance=argparser.ms2_prec_tolerance)
+            del mzml_
+    else:
+        exp = lcmsms.LCMSMSExperiment(tqdm.tqdm(mzml.MzML(argparser.mzml)),
+                                      prec_tolerance=argparser.ms2_prec_tolerance)
 
     ###  MS1 processing  ####
-
     targets = pd.read_csv(argparser.targets, sep='\t')
     targets_ms1 = targets[["Sequence", "Precursor_Mz"]].drop_duplicates()
     results_ms1 = pd.DataFrame(columns=["Sequence",
@@ -180,7 +182,7 @@ if __name__ == '__main__':
                 axs[n, nn].vlines(frag, 0, max(s_ext.i), "r")
                 axs[n, 2].plot([frag], [fint], "rx")#, markersize=15)
 
-            except PeaksNotFound:
+            except lcmsms.PeaksNotFound:
                 print(f"No MS2 peak for {prec:.4f}/{frag:.4f}")
                 f_hw = 0
                 f_area = 0
