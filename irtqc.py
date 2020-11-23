@@ -3,6 +3,7 @@ import tqdm
 import pandas as pd
 from matplotlib import pyplot as plt
 from matplotlib.backends.backend_pdf import PdfPages
+from matplotlib.ticker import FormatStrFormatter
 from pyteomics import mzml
 import lcmsms
 
@@ -69,13 +70,14 @@ if __name__ == '__main__':
     #from matplotlib.backends.backend_pdf import PdfPages
     #pdf = PdfPages('MS1.pdf')
 
-    fig, axs = plt.subplots(len(targets_ms1), 2, figsize=(15, 40), gridspec_kw={'width_ratios': [1, 1]})
+    fig, axs = plt.subplots(len(targets_ms1), 4, figsize=(15, 60), gridspec_kw={'width_ratios': [1, 1, 1, 1]})
     plt.subplots_adjust(hspace=0.5)
 
     n=0
 
     for k, row in targets_ms1.iterrows():
         mz = row["Precursor_Mz"]
+        seq = row["Sequence"]
         ch = exp.ms1.xic(mz, argparser.ms1_ppm)
         chs = ch.smooth(sigma=2)
         apext, apexi = ch.get_apex()
@@ -88,24 +90,52 @@ if __name__ == '__main__':
         ms1_hw = spec.get_apex_width_pc(mz, apex_pc=50, tolerance=0.05)
         ms1_area = spec.get_peak_area(mz, tolerance=0.05)
 
-        ### PLOT ###
+        ### PLOTS ###
+        # XIC
+        axs[n, 0].ticklabel_format(axis="y", style = 'sci', scilimits=(0,0))
+        axs[n, 0].ticklabel_format(axis="x", style = 'plain')
         axs[n, 0].plot(ch.t, ch.i, "g-")
         #axs[n, 0].plot(xictimes, xic)
         #axs[n, 0].plot(xictimes, asym_peak(xictimes, *popt), 'r-')
         axs[n, 0].vlines(apext, 0, apexi * 1.1)
-        axs[n, 0].title.set_text("{}  mz={}  apex@{}".format(n, mz, apext))
+        axs[n, 0].title.set_text(f"{seq}\nmz={mz:.4f}\napex@{apext:.2f}min")
         axs[n, 0].set_xlim(15, 30)
 
+        # XIC zoom
+        axs[n, 1].ticklabel_format(axis="y", style = 'sci', scilimits=(0,0))
+        axs[n, 1].ticklabel_format(axis="x", style = 'plain')
         axs[n, 1].plot(ch.t, ch.i, "gx-")
         axs[n, 1].plot(chs.t, chs.i, "rx-")
         #axs[n, 1].plot(xictimes, asym_peak(xictimes, *popt), 'r-')
         axs[n, 1].vlines(apext, 0, apexi)
-        axs[n, 1].title.set_text("{}  mz={:.4f}".format(n, mz))
-        axs[n, 1].hlines(apexi *0.5, *width1)#, xictimes[right1])
-        axs[n, 1].hlines(apexi *0.05, *width2)# xictimes[left2], xictimes[right2])
+        axs[n, 1].title.set_text(f"MS1 XIC zoon\n mz={mz:.4f}")
+        axs[n, 1].hlines(apexi *0.5, *width1)
+        axs[n, 1].hlines(apexi *0.05, *width2)
         axs[n, 1].set_xlim(apext - 0.2, apext + 0.4)
         axs[n, 1].text(0.45, 0.95, f"Area50={area1:.3e}\nArea5  ={area2:.3e}", transform=axs[n, 1].transAxes,
                        fontsize=10, verticalalignment='top')
+
+        # MS1 spectrum
+        spec = exp.ms1[apext]
+        axs[n, 2].ticklabel_format(axis="y", style='sci', scilimits=(0,0))
+        axs[n, 2].ticklabel_format(axis="x", style='plain')
+        axs[n, 2].title.set_text(f"MS1 spectrum\n@time={apext:.2f}min")
+        spec.plot(ax=axs[n, 2], marks=[ms1_apex_mz])
+
+        # MS1 spectrum zoom
+        ms1_tolerance = ms1_apex_mz*argparser.ms1_ppm*1e-6
+        spec_zoom = spec[ms1_apex_mz-argparser.ms2_prec_tolerance:ms1_apex_mz+argparser.ms2_prec_tolerance]  # No /2 (sic!)
+        axs[n, 3].ticklabel_format(axis="y", style = 'sci', scilimits=(0,0))
+        axs[n, 3].ticklabel_format(axis="x", style='sci', scilimits=(-3,-3), useOffset=ms1_apex_mz)
+        #axs[n, 3].xaxis.set_major_formatter(FormatStrFormatter('%.2f'))
+        spec_zoom.plot("go-", ax=axs[n, 3])
+        axs[n, 3].title.set_text("MS1 zoom\n mz={:.4f}".format(mz))
+        axs[n, 3].vlines(ms1_apex_mz, 0, ms1_apex_int, "r")
+        ms1_w_left, ms1_w_right = spec.get_apex_times_pc(ms1_apex_mz, apex_pc=50, tolerance=0.05)
+        axs[n, 3].hlines(ms1_apex_int/2, ms1_w_left, ms1_w_right, "r")
+        axs[n, 3].text(0.55, 0.95, f"Area={ms1_area:.2e}\nHW={ms1_hw:.2e}", transform=axs[n, 3].transAxes,
+                       fontsize=10, verticalalignment='top')
+
         n+=1
         ############
 
@@ -141,8 +171,10 @@ if __name__ == '__main__':
                                         "MS2_peak_area",
                                ])
     n_ = max(map(lambda x: len(x[1]), targets_ms2.groupby(by=["Sequence", "Precursor_Mz"])))
-    fig, axs = plt.subplots(len(targets_ms1), 3+n_, figsize=(15, 80))
+    fig, axs = plt.subplots(len(targets_ms1), 3+n_, figsize=(15, 100))
     plt.subplots_adjust(hspace=0.5)
+    plt.subplots_adjust(hspace=0.5)
+
     n = -1
     for k, grp in targets_ms2.groupby(by=["Sequence", "Precursor_Mz"]):
         n+=1
@@ -160,12 +192,23 @@ if __name__ == '__main__':
         results_ms1.loc[seq, "TIC_MS2"] = tic_apexint
         spec = ms2_ext[tic_apext]
 
+        ### PLOTS ###
+        # TIC MS2
+        axs[n, 0].ticklabel_format(axis="y", style='sci', scilimits=(0,0))
+        axs[n, 0].ticklabel_format(axis="x", style='plain')
         axs[n, 0].plot(ms2_all.tic.t, ms2_all.tic.i, "g-")
-        axs[n, 0].title.set_text("TIC MS2 mz={:.2f}\n apex@{:.2f}".format(prec, tic_apext))
+        axs[n, 0].title.set_text("TIC MS2\nmz={:.4f}\n apex@{:.2f}\n".format(prec, tic_apext))
+        # TIC MS2 zoom
+        axs[n, 1].ticklabel_format(axis="y", style='sci', scilimits=(0,0))
+        axs[n, 1].ticklabel_format(axis="x" , style='plain')
         axs[n, 1].plot(ms2_ext.tic.t, ms2_ext.tic.i, "g-")
         axs[n, 1].vlines(tic_apext, 0, tic_apexint, "r")
+        axs[n, 1].title.set_text(f"TIC MS2 zoom\nmz={prec:.4f}\n apex@{tic_apext:.2f}\n")
+        # MS2 spectrum
+        axs[n, 2].ticklabel_format(axis="y", style='sci', scilimits=(0,0))
+        axs[n, 2].ticklabel_format(axis="x", style='plain')
         spec.plot(ax=axs[n, 2])
-        axs[n, 2].title.set_text("MS/MS for\n {:.2f}".format(prec))
+        axs[n, 2].title.set_text(f"MS/MS for\n{prec:.4f}\n@time={tic_apext:.2f}min\n")
 
         nn = 3
         for kk, row in grp.iterrows():
@@ -175,10 +218,19 @@ if __name__ == '__main__':
                 f_hw = spec.get_apex_width_pc(frag, apex_pc=50, tolerance=argparser.ms2_frag_tolerance)
                 f_area = spec.get_peak_area(fmz, tolerance=argparser.ms2_frag_tolerance)
                 s_ext = spec[fmz-argparser.ms2_frag_tolerance/2:fmz+argparser.ms2_frag_tolerance/2]
-                s_ext.plot(ax=axs[n, nn])
-                axs[n, nn].title.set_text("MS2 zoom\n mz={:.2f}".format(fmz))
-                axs[n, nn].vlines(frag, 0, max(s_ext.i), "r")
+                s_ext.plot("go-", ax=axs[n, nn])
+                axs[n, nn].ticklabel_format(axis="y",style='sci', scilimits=(0, 0))
+                #axs[n, nn].ticklabel_format(axis="x", style='sci', scilimits=(-2,-2), useOffset=fmz)
+                axs[n, nn].ticklabel_format(axis="x", style='plain')
+                axs[n, nn].title.set_text(f"MS2 zoom\nmz={fmz:.4f}\n")
+                axs[n, nn].vlines(fmz, 0, max(s_ext.i), "r")
+                axs[n, nn].vlines(frag, 0, max(s_ext.i), "blue")
                 axs[n, 2].plot([frag], [fint], "rx")#, markersize=15)
+                ms2_w_left, ms2_w_right = s_ext.get_apex_times_pc(fmz, apex_pc=50, tolerance=0.05)
+                axs[n, nn].hlines(fint / 2, ms2_w_left, ms2_w_right, "r")
+                axs[n, nn].text(0.6, 0.98, f"Area=\n{ms1_area:.2e}\n\nHW=\n{ms1_hw:.2e}", transform=axs[n, nn].transAxes,
+                               fontsize=8, verticalalignment='top')
+
 
             except lcmsms.PeaksNotFound:
                 print(f"No MS2 peak for {prec:.4f}/{frag:.4f}")

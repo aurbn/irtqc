@@ -153,11 +153,11 @@ class Spectrum:
         if ax:
             ax.plot(self.__mza, self.__inta, *args, **kwargs)
             if marks:
-                ax.scatter(marks, mys, "x")
+                ax.plot(marks, mys, "rx")
         else:
             plt.plot(self.__mza, self.__inta, *args, **kwargs)
             if marks:
-                plt.scatter(marks, mys, "x")
+                plt.plot(marks, mys, "rx")
 
     def _get_apex_around(self, mz, tolerance):
         """Find apex within mz -/+ tolerance/2"""
@@ -185,13 +185,17 @@ class Spectrum:
         return Spectrum(res_x, res_y, self.__level, self.__prec, self.__time)
 
     def get_apex_width_pc(self, mz, apex_pc=50, tolerance=0.05):
+        l, r = self.get_apex_times_pc(mz, apex_pc, tolerance)
+        return r-l
+
+    def get_apex_times_pc(self, mz, apex_pc=50, tolerance=0.05):
         """Half width of MS peak"""
         apex_mz, apex_int, index = self._get_apex_around(mz, tolerance)
         resampled = self._resample_peak_around(mz, tolerance)
         t_ = resampled.i > (apex_int*apex_pc/100)
         left = np.where(t_)[0][0]
         right = np.where(t_)[0][-1]
-        return resampled.mz[right]-resampled.mz[left]
+        return resampled.mz[right], resampled.mz[left]
 
     def _get_area(self):
         """Get area under whole spectrum"""
