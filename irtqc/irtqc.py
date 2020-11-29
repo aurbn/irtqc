@@ -4,9 +4,11 @@ import tqdm
 import pandas as pd
 from matplotlib import pyplot as plt
 from matplotlib.backends.backend_pdf import PdfPages
-from matplotlib.ticker import FormatStrFormatter
 from pyteomics import mzml
+#import lcmsms as lcmsms
+#from irtqc import lcmsms
 import lcmsms
+
 
 if __name__ == '__main__':
     argparser = ArgumentParser(description="iRT peptide QC tool")
@@ -15,8 +17,8 @@ if __name__ == '__main__':
     argparser.add_argument('--ms1-ppm', type=float, default=5, help="MS1 extraction window in ppm")
     argparser.add_argument('--ms2-prec-tolerance', type=float, default=0.01, help="MS2 precursor tolerance")
     argparser.add_argument('--ms2-frag-tolerance', type=float, default=1, help="MS2 precursor tolerance")
-    argparser.add_argument('--width-1-pc', type=float, default=50, help="Chromatographic width 1 in % of apex")
-    argparser.add_argument('--width-2-pc', type=float, default=5, help="Chromatographic width 2 in % of apex")
+    argparser.add_argument('--width-1-pc', type=float, default=50, help="Chromatographic width 1 in %% of apex")
+    argparser.add_argument('--width-2-pc', type=float, default=5, help="Chromatographic width 2 in %% of apex")
     argparser.add_argument('--debug', action="store_true", help="Pickle cache input file")
     argparser = argparser.parse_args()
 
@@ -34,7 +36,7 @@ if __name__ == '__main__':
                 _start_time = time.time()
                 print("Unpickling")
                 exp = lcmsms.LCMSMSExperiment(tqdm.tqdm(pickle.load(f_)),
-                                          prec_tolerance=argparser.ms2_prec_tolerance)
+                                              prec_tolerance=argparser.ms2_prec_tolerance)
                 print(f"Unpickled in {time.time()-_start_time} seconds")
         else:
             print("Reading and pickling")
