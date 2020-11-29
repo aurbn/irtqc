@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 from argparse import ArgumentParser
 import tqdm
 import pandas as pd
@@ -14,8 +15,8 @@ if __name__ == '__main__':
     argparser.add_argument('--ms1-ppm', type=float, default=5, help="MS1 extraction window in ppm")
     argparser.add_argument('--ms2-prec-tolerance', type=float, default=0.01, help="MS2 precursor tolerance")
     argparser.add_argument('--ms2-frag-tolerance', type=float, default=1, help="MS2 precursor tolerance")
-    argparser.add_argument('--width-1-pc', type=float, default=50, help="Cromatographic width 1 in % of apex")
-    argparser.add_argument('--width-2-pc', type=float, default=5, help="Cromatographic width 2 in % of apex")
+    argparser.add_argument('--width-1-pc', type=float, default=50, help="Chromatographic width 1 in % of apex")
+    argparser.add_argument('--width-2-pc', type=float, default=5, help="Chromatographic width 2 in % of apex")
     argparser.add_argument('--debug', action="store_true", help="Pickle cache input file")
     argparser = argparser.parse_args()
 
