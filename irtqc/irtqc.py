@@ -10,7 +10,7 @@ from pyteomics import mzml
 import lcmsms
 
 
-if __name__ == '__main__':
+def main():
     argparser = ArgumentParser(description="iRT peptide QC tool")
     argparser.add_argument('--mzml', type=str, required=True, help="MzML file")
     argparser.add_argument('--targets', type=str, required=True, help="Targets file")
@@ -262,7 +262,5 @@ if __name__ == '__main__':
 
     pdf.close()
 
-
-
-        
-
+if __name__ == '__main__':
+    main()
