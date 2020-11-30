@@ -5,9 +5,7 @@ import pandas as pd
 from matplotlib import pyplot as plt
 from matplotlib.backends.backend_pdf import PdfPages
 from pyteomics import mzml
-#import lcmsms as lcmsms
-#from irtqc import lcmsms
-import lcmsms
+from irtqc import lcmsms
 
 
 def main():
