@@ -20,5 +20,5 @@ setuptools.setup(
         "Operating System :: OS Independent",
     ],
     python_requires='>=3.6',
-    entry_points={'console_scripts': ['qc1 = qc1:main']},
+    entry_points={'console_scripts': ['qc1 = irtqc:qc1_main']},
 )

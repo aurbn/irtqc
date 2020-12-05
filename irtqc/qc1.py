@@ -7,7 +7,7 @@ from matplotlib.backends.backend_pdf import PdfPages
 from pyteomics import mzml
 from irtqc import lcmsms
 
-def main():
+def qc1_main():
     argparser = ArgumentParser(description="iRT peptide QC tool")
     argparser.add_argument('--mzml', type=str, required=True, help="MzML file")
     argparser.add_argument('--targets', type=str, required=True, help="Targets file")
@@ -260,4 +260,4 @@ def main():
     pdf.close()
 
 if __name__ == '__main__':
-    main()
+    qc1_main()
